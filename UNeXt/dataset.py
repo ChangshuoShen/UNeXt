@@ -7,16 +7,23 @@ import torch.utils.data
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, img_ids, img_dir, mask_dir, img_ext, mask_ext, num_classes, transform=None):
+    def __init__(self, 
+                 img_ids, 
+                 img_dir, 
+                 mask_dir, 
+                 img_ext, 
+                 mask_ext, 
+                 num_classes, 
+                 transform=None):
         """
         Args:
             img_ids (list): Image ids.
             img_dir: Image file directory.
             mask_dir: Mask file directory.
-            img_ext (str): Image file extension.
+            img_ext (str): Image file extension.拓展名指的是.png, .jpg这种
             mask_ext (str): Mask file extension.
-            num_classes (int): Number of classes.
-            transform (Compose, optional): Compose transforms of albumentations. Defaults to None.
+            num_classes (int): Number of classes.假设每个类别对应一个二进制掩码，最终的掩码张量将是由这些单通道掩码堆叠而成的多通道掩码。
+            transform (Compose, optional): Compose transforms of albumentations. Defaults to None.这里用数据增强
         
         Note:
             Make sure to put the files as the following structure:

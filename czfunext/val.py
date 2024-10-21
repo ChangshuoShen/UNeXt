@@ -10,6 +10,8 @@ from tqdm import tqdm
 from albumentations import Resize
 from method import Unext, Dataset, AverageMeter
 
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 def iou_score(output, target):
     smooth = 1e-5
 
@@ -28,8 +30,9 @@ def iou_score(output, target):
 
 def main():
     
-    model = Unext(num_classes=1, input_channels=3).cuda()
-    
+    # model = Unext(num_classes=1, input_channels=3).cuda()
+    model = Unext(num_classes=1, input_channels=3).to(DEVICE)
+
     img_ids = glob(os.path.join('inputs', 'val_dataset', 'images', '*' + '.jpg'))    ########### 修改数据库读取路径和文件格式
     img_ids = [os.path.splitext(os.path.basename(p))[0] for p in img_ids]
     
@@ -69,9 +72,12 @@ def main():
         os.makedirs(os.path.join('outputs', 'my_val', str(c)), exist_ok=True)
     with torch.no_grad():
         for input, target, meta in tqdm(val_loader, total=len(val_loader)):
-            input = input.cuda()
-            target = target.cuda()
-            model = model.cuda()
+            # input = input.cuda()
+            # target = target.cuda()
+            # model = model.cuda()
+            input = input.to(DEVICE)
+            target = target.to(DEVICE)
+            model = model.to(DEVICE)
             # compute output
             output = model(input)
 
@@ -93,8 +99,8 @@ def main():
 
     print('IoU: %.4f' % iou_avg_meter.avg)
     print('Dice: %.4f' % dice_avg_meter.avg)
-
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 if __name__ == '__main__':

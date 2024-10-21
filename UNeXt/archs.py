@@ -20,7 +20,9 @@ import math
 from abc import ABCMeta, abstractmethod
 from mmcv.cnn import ConvModule
 import pdb
-
+'''
+archs: architectures用来定义模型的结构
+'''
 
 def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
     #辅助函数conv1x1，用于创建一个 1x1 卷积层
@@ -35,29 +37,34 @@ def shift(self, dim):
     torch.roll 是 PyTorch 的一个函数，用于轮转张量。在这里，它被用于将每个通道的元素沿着 dim 维度轮转 shift 个位置。
     xs 是一个列表，其中包含了输入张量的所有通道。shift 是一个整数，表示轮转的偏移量，其值从 -self.pad 到 self.pad。
     '''
+    # 将所有轮转过的通道沿着第二个维度（索引从 0 开始）拼接起来。
+    # 这会创建一个新的多通道张量，其中每个通道都是原始通道的一个轮转版本。
     x_cat = torch.cat(x_shift, 1)  
-    # 将所有轮转过的通道沿着第二个维度（索引从 0 开始）拼接起来。这会创建一个新的多通道张量，其中每个通道都是原始通道的一个轮转版本。
     
+    # 将张量在第三个维度上裁剪（narrow）。
+    # 裁剪开始于位置 self.pad，长度为 H。这里假设 H 是裁剪后的维度大小。
     x_cat = torch.narrow(x_cat, 2, self.pad, H)  
-    # 这行代码将张量在第三个维度上裁剪（narrow）。裁剪开始于位置 self.pad，长度为 H。这里假设 H 是裁剪后的维度大小。
     
+    # 将张量在第四个维度上裁剪。
+    # 裁剪开始于位置 self.pad，长度为 W。这里假设 W 是裁剪后的维度大小。
     x_cat = torch.narrow(x_cat, 3, self.pad, W)  
-    # 这行代码将张量在第四个维度上裁剪。裁剪开始于位置 self.pad，长度为 W。这里假设 W 是裁剪后的维度大小。
     
     return x_cat  
     # 返回处理后的张量
 
 class shiftmlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0., shift_size=5):
+    def __init__(self, in_features, hidden_features=None, out_features=None, 
+                 act_layer=nn.GELU, drop=0., shift_size=5):
         super().__init__()
-        out_features = out_features or in_features
+        out_features = out_features or in_features 
         hidden_features = hidden_features or in_features
         self.dim = in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.dwconv = DWConv(hidden_features)
-        self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(drop)
+        
+        self.fc1 = nn.Linear(in_features, hidden_features) # 第一层线性变换
+        self.dwconv = DWConv(hidden_features) # 深度卷接
+        self.act = act_layer() # 激活函数
+        self.fc2 = nn.Linear(hidden_features, out_features) # 第二层线性变换
+        self.drop = nn.Dropout(drop) # dropout层
 
         self.shift_size = shift_size
         self.pad = shift_size // 2
@@ -66,14 +73,19 @@ class shiftmlp(nn.Module):
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
+        '''初始化权重参数'''
         if isinstance(m, nn.Linear):
+            # 对于线性层，截断正态分布初始化
             trunc_normal_(m.weight, std=.02)
             if isinstance(m, nn.Linear) and m.bias is not None:
+                # 偏置初始化为0
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+            # 对线性层数，bias初始化0, weight初始化1
+            nn.init.constant_(m.bias, 0) # 偏置初始化为0
+            nn.init.constant_(m.weight, 1.0) # 权重初始化为1
         elif isinstance(m, nn.Conv2d):
+            # 对卷积层，计算输出的fan-out值，对weight做正态初始化
             fan_out = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
             fan_out //= m.groups
             m.weight.data.normal_(0, math.sqrt(2.0 / fan_out))
@@ -89,20 +101,18 @@ class shiftmlp(nn.Module):
 
     def forward(self, x, H, W):
         # pdb.set_trace()
-        B, N, C = x.shape
+        B, N, C = x.shape # (batch_size, num_features, num_channels)
 
-        xn = x.transpose(1, 2).view(B, C, H, W).contiguous()
+        xn = x.transpose(1, 2).view(B, C, H, W).contiguous() # 调整维数
         xn = F.pad(xn, (self.pad, self.pad, self.pad, self.pad) , "constant", 0)
-        xs = torch.chunk(xn, self.shift_size, 1)
+        xs = torch.chunk(xn, self.shift_size, 1) # 对张量分块
         x_shift = [torch.roll(x_c, shift, 2) for x_c, shift in zip(xs, range(-self.pad, self.pad+1))]
-        x_cat = torch.cat(x_shift, 1)
-        x_cat = torch.narrow(x_cat, 2, self.pad, H)
+        x_cat = torch.cat(x_shift, 1) # 拼接
+        x_cat = torch.narrow(x_cat, 2, self.pad, H) # 裁减
         x_s = torch.narrow(x_cat, 3, self.pad, W)
-
 
         x_s = x_s.reshape(B,C,H*W).contiguous()
         x_shift_r = x_s.transpose(1,2)
-
 
         x = self.fc1(x_shift_r)
 
@@ -127,10 +137,10 @@ class shiftmlp(nn.Module):
 
 
 class shiftedBlock(nn.Module):
-    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
+    def __init__(self, dim, num_heads, mlp_ratio=4., 
+                 qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm, sr_ratio=1):
         super().__init__()
-
 
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
@@ -154,7 +164,6 @@ class shiftedBlock(nn.Module):
                 m.bias.data.zero_()
 
     def forward(self, x, H, W):
-
         x = x + self.drop_path(self.mlp(self.norm2(x), H, W))
         return x
 
@@ -173,7 +182,8 @@ class DWConv(nn.Module):
         return x
 
 class OverlapPatchEmbed(nn.Module):
-    """ Image to Patch Embedding
+    """ 
+        Image to Patch Embedding图像到块嵌入
     """
 
     def __init__(self, img_size=224, patch_size=7, stride=4, in_chans=3, embed_dim=768):
@@ -225,20 +235,25 @@ class UNext(nn.Module):
                  depths=[1, 1, 1], sr_ratios=[8, 4, 2, 1], **kwargs):
         super().__init__()
         
+        # encoder部分，定义三层卷积层
         self.encoder1 = nn.Conv2d(3, 16, 3, stride=1, padding=1)  
         self.encoder2 = nn.Conv2d(16, 32, 3, stride=1, padding=1)  
         self.encoder3 = nn.Conv2d(32, 128, 3, stride=1, padding=1)
-
+        
+        # encoder batch normalization
         self.ebn1 = nn.BatchNorm2d(16)
         self.ebn2 = nn.BatchNorm2d(32)
         self.ebn3 = nn.BatchNorm2d(128)
         
+        # normalization正则化层
         self.norm3 = norm_layer(embed_dims[1])
         self.norm4 = norm_layer(embed_dims[2])
 
+        # decoder normalization解码器的正则化部分
         self.dnorm3 = norm_layer(160)
         self.dnorm4 = norm_layer(128)
 
+        # dpr: drop path rate 丢弃路径率，是一种正则化技术
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]
 
         self.block1 = nn.ModuleList([shiftedBlock(

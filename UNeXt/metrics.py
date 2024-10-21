@@ -2,8 +2,16 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+'''
+iou_score 返回 IoU 和 Dice 系数，常用于语义分割任务来衡量模型在物体检测中的准确度。
+dice_coef 专门用于计算 Dice 系数，Dice 系数在医学图像分割中尤为常用。
+两个函数都使用平滑项
+'''
 
 def iou_score(output, target):
+    '''
+    IoU: Intersection over Union也成Jaccard常数
+    '''
     smooth = 1e-5
 
     if torch.is_tensor(output):
@@ -20,6 +28,9 @@ def iou_score(output, target):
 
 
 def dice_coef(output, target):
+    '''
+    Dice系数，另一种相似性度量
+    '''
     smooth = 1e-5
 
     output = torch.sigmoid(output).view(-1).data.cpu().numpy()

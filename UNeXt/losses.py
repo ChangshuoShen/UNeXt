@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 # 前三个import我很好理解，下面这个暂时不知道，GitHub下载后发现是jupyter文件，后续再看吧，反正不影响程序运行
+# from pytorch_optimizer.loss.lovasz import LovaszHingeLoss
 '''
 try:
     from LovaszSoftmax.pytorch.lovasz_losses import lovasz_hinge
@@ -10,13 +11,15 @@ except ImportError:
 '''
 # Lovász-Softmax 损失：神经网络中交并集测度优化的可处理替代项
 
-__all__ = ['BCEDiceLoss', 'LovaszHingeLoss']    
+__all__ = ['BCEDiceLoss', 'LovaszHingeLoss']
+# 这是一个魔术变量，控制import的时候能导入哪些内容
 # 定义了当其他模块使用 from module import * 语句导入这个模块时，只有 BCEDiceLoss 和 LovaszHingeLoss 这两个名字会被导入
 
 # 二元交叉熵损失（Binary Cross Entropy，BCE）和Dice损失
 class BCEDiceLoss(nn.Module):
     def __init__(self):
-        super().__init__()  # 调用父类 nn.Module 的构造函数，(PyTorch的规定，如果我们覆盖了构造函数，则需要在其中调用父类的构造函数)
+        super().__init__()  # 调用父类 nn.Module 的构造函数，
+        # (PyTorch的规定，如果我们覆盖了构造函数，则需要在其中调用父类的构造函数)
 
     def forward(self, input, target):
         bce = F.binary_cross_entropy_with_logits(input, target) # 计算二元交叉熵损失（BCE）

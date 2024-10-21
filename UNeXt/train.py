@@ -24,18 +24,19 @@ from utils import AverageMeter, str2bool
 from archs import UNext
 # 前面全是import，没啥说的
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # 全局化DEVICE，有GPU再用，没有GOU就算了
 ARCH_NAMES = archs.__all__
 LOSS_NAMES = losses.__all__
 LOSS_NAMES.append('BCEWithLogitsLoss')
 
 '''
-对于parser.add_argument后面的参数，一般有：
-name：参数的名称，在命令行中指定参数时使用。
-nargs：参数的个数，指定参数接受多少个值。
-type：参数的数据类型，指定参数值应该被解析成哪种类型。
-default：参数的默认值，在命令行中未指定该参数时使用。
-help：参数的帮助文本，用于在命令行中显示参数的说明信息。
-action：参数的动作，指定参数的行为。
+    对于parser.add_argument后面的参数，一般有：
+        name：参数的名称，在命令行中指定参数时使用。
+        nargs：参数的个数，指定参数接受多少个值。
+        type：参数的数据类型，指定参数值应该被解析成哪种类型。
+        default：参数的默认值，在命令行中未指定该参数时使用。
+        help：参数的帮助文本，用于在命令行中显示参数的说明信息。
+        action：参数的动作，指定参数的行为。
 '''
 # 抽提模型时感觉parse方法并不需要
 def parse_args():
@@ -112,14 +113,18 @@ def parse_args():
 # args = parser.parse_args()
 def train(config, train_loader, model, criterion, optimizer):
     avg_meters = {'loss': AverageMeter(),
-                  'iou': AverageMeter()}
+                  'iou': AverageMeter()} # 存储平均损失和平均IoU分数
 
-    model.train()   # 启用 Batch Normalization(BN) 和 Dropout
+    model.train()   # 设置为训练模式，启用 Batch Normalization(BN) 和 Dropout
 
     pbar = tqdm(total=len(train_loader))    # 创建一个进度条，其总长度即为训练数据集的样本数
-    for input, target, _ in train_loader:   # 对训练集的每一个样本都进行迭代，将其传到GPU中
-        input = input.cuda()                #输入和标签都要传
-        target = target.cuda()
+    
+    for input, target, _ in train_loader:
+        # 将每个输入数据和目标标签都放在device中
+        # input = input.cuda()   
+        # target = target.cuda()
+        input = input.to(DEVICE)
+        target = target.to(DEVICE)
 
         # 计算模型的输出
         if config['deep_supervision']:      # 设置:如果config设置为深度监督时的输出
@@ -128,7 +133,7 @@ def train(config, train_loader, model, criterion, optimizer):
             for output in outputs:          # 对每一个输出计算损失并进行累加
                 loss += criterion(output, target)
             loss /= len(outputs)            # 计算平均损失
-            iou,dice = iou_score(outputs[-1], target)
+            iou, dice = iou_score(outputs[-1], target)
         else:
             output = model(input)                   # 如果不满足上述config，同样产生一个输出
             loss = criterion(output, target)        # 使用criterion函数计算损失
@@ -157,20 +162,23 @@ def train(config, train_loader, model, criterion, optimizer):
     return OrderedDict([('loss', avg_meters['loss'].avg),
                         ('iou', avg_meters['iou'].avg)])
 
-# 验证函数的开始，初始化一个字典来保存验证过程中的平均损失、平均 IoU 分数和平均 Dice 分数
+
 def validate(config, val_loader, model, criterion):
+    # 验证函数的开始，初始化一个字典来保存验证过程中的平均损失、平均 IoU 分数和平均 Dice 分数
     avg_meters = {'loss': AverageMeter(),
                   'iou': AverageMeter(),
                    'dice': AverageMeter()}
 
-    # 切换到测试集的测试模式
-    model.eval()    # 不启用 Batch Normalization 和 Dropout
+    model.eval()    # 切换到测试模式，不启用 Batch Normalization 和 Dropout
 
     with torch.no_grad():   # 不计算梯度从而减少内存使用并加速计算
-        pbar = tqdm(total=len(val_loader))  # 创建总长度为验证集数据样本数目的进度条
-        for input, target, _ in val_loader: #同理传输到GPU
-            input = input.cuda()
-            target = target.cuda()
+        pbar = tqdm(total=len(val_loader))
+        for input, target, _ in val_loader:
+            # 依然传入gpu
+            # input = input.cuda()
+            # target = target.cuda()
+            input = input.to(DEVICE)
+            target = target.to(DEVICE)
 
             # 计算输出值
             if config['deep_supervision']:  # 和train中的几乎一致
@@ -203,10 +211,11 @@ def validate(config, val_loader, model, criterion):
                         ('dice', avg_meters['dice'].avg)])
 
 
-def main():                     # 主程序的入口
+def main():
     config = vars(parse_args()) # 解析命令行参数并转换为字典形式
 
-    if config['name'] is None:  # 同样是判断是否启用名为深度监督
+    if config['name'] is None:  
+        # 同样是判断是否启用名为深度监督
         if config['deep_supervision']:
             config['name'] = '%s_%s_wDS' % (config['dataset'], config['arch'])
         else:
@@ -225,9 +234,11 @@ def main():                     # 主程序的入口
 
     # 定义 loss function (criterion)
     if config['loss'] == 'BCEWithLogitsLoss':
-        criterion = nn.BCEWithLogitsLoss().cuda()
+        # criterion = nn.BCEWithLogitsLoss().cuda()
+        criterion = nn.BCEWithLogitsLoss().to(DEVICE)
     else:
-        criterion = losses.__dict__[config['loss']]().cuda()
+        # criterion = losses.__dict__[config['loss']]().cuda()
+        criterion = losses.__dict__[config['loss']]().to(DEVICE)
 
     cudnn.benchmark = True  # 若有多个GPU可用，则启动cudnn自动优化
 
@@ -236,7 +247,8 @@ def main():                     # 主程序的入口
                                            config['input_channels'],
                                            config['deep_supervision'])
 
-    model = model.cuda()    # 将模型放到GPU上
+    # model = model.cuda()
+    model = model.to(DEVICE)
 
     # 过滤出需要梯度的模型参数
     params = filter(lambda p: p.requires_grad, model.parameters())
@@ -291,6 +303,7 @@ def main():                     # 主程序的入口
         mask_ext=config['mask_ext'],
         num_classes=config['num_classes'],
         transform=train_transform)
+    
     val_dataset = Dataset(
         img_ids=val_img_ids,
         img_dir=os.path.join('inputs', config['dataset'], 'images'),
@@ -299,6 +312,7 @@ def main():                     # 主程序的入口
         mask_ext=config['mask_ext'],
         num_classes=config['num_classes'],
         transform=val_transform)
+    
     # 创建数据加载器
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -306,12 +320,14 @@ def main():                     # 主程序的入口
         shuffle=True,
         num_workers=config['num_workers'],
         drop_last=True)
+    
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=config['batch_size'],
         shuffle=False,
         num_workers=config['num_workers'],
         drop_last=False)
+    
     # 初始化训练日志
     log = OrderedDict([
         ('epoch', []),
@@ -370,11 +386,9 @@ def main():                     # 主程序的入口
         if config['early_stopping'] >= 0 and trigger >= config['early_stopping']:
             print("=> early stopping")
             break
-
-        torch.cuda.empty_cache()    # 清空GPU的缓存
-
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()  # 清空GPU的缓存
 
 if __name__ == '__main__':
     main()
-# 新手说明：只有当这个文件被直接运行的时候，main() 函数才会被执行。如果这个文件是被其他文件导入的，那么 main() 函数就不会被执行。
-# 这种模式可以让你的 Python 文件既可以被其他文件导入并使用其中的函数或类，也可以被直接运行。

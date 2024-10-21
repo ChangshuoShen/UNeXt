@@ -1,6 +1,6 @@
 import argparse
 import os
-from glob import glob
+from glob import glob # 用于文件和目录路径名的匹配
 
 import cv2
 import torch
@@ -18,6 +18,12 @@ from utils import AverageMeter
 from albumentations import RandomRotate90,Resize
 import time
 
+'''
+定义了一个图像分割模型的后处理步骤。
+从配置文件中加载模型及其相关参数，进行推理（inference）并计算性能指标，如 IoU 和 Dice 系数，
+同时还比较了 CPU 和 GPU 的推理时间。
+'''
+
 def parse_args():
     parser = argparse.ArgumentParser()
 
@@ -30,13 +36,13 @@ def parse_args():
 
 
 def main():
-    args = parse_args()
+    args = parse_args() # 解析命令行参数，主要是获得模型名称
 
     with open('models/%s/config.yml' % args.name, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
     print('-'*20)
-    for key in config.keys():
+    for key in config.keys(): # 配置文件中的所有键值对
         print('%s: %s' % (key, str(config[key])))
     print('-'*20)
 
@@ -73,6 +79,7 @@ def main():
         mask_ext=config['mask_ext'],
         num_classes=config['num_classes'],
         transform=val_transform)
+
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=config['batch_size'],
@@ -132,7 +139,6 @@ def main():
     print('GPU: %.4f' %gput.avg)
 
     torch.cuda.empty_cache()
-
 
 if __name__ == '__main__':
     main()
